@@ -21,8 +21,23 @@
   /* stage (diagram) + panel side by side; the panel is a real column, so the
      diagram reflows instead of being covered. */
   #app{display:flex;height:100vh;overflow:hidden}
-  #stage{flex:1;min-width:0;overflow:auto;display:flex;align-items:center;justify-content:center}
-  svg{display:block;width:100%;min-width:900px;height:auto}
+  /* the stage is a fixed viewport; the diagram is zoomed and panned by a
+     transform, so it never reflows or scrolls the page. */
+  #stage{flex:1;min-width:0;position:relative;overflow:hidden;cursor:grab;
+    touch-action:none}
+  #stage.dragging{cursor:grabbing}
+  svg{display:block;position:absolute;top:0;left:0;width:max(100%,900px);
+    height:100%;transform-origin:0 0;will-change:transform;user-select:none}
+
+  /* zoom / pan controls, pinned to the corner of the stage */
+  #zoomui{position:absolute;right:12px;bottom:12px;z-index:40;display:flex;gap:3px;
+    background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px;
+    box-shadow:0 1px 3px rgba(15,23,42,.07)}
+  #zoomui button{width:27px;height:27px;padding:0;border:0;border-radius:6px;
+    background:transparent;font:inherit;font-size:15px;line-height:1;color:#5B6B7C;
+    cursor:pointer;touch-action:manipulation}
+  #zoomui button:hover{background:#F1F5F9;color:var(--ink)}
+  #zoomui button:focus-visible{outline:2px solid #93A2B3;outline-offset:1px}
 
   .col-title{font-size:10px;font-weight:700;letter-spacing:1.5px;fill:var(--faint)}
   .node-box{fill:var(--node);stroke:var(--line);stroke-width:1}
@@ -153,7 +168,14 @@
 </head>
 <body>
 <div id="app">
-  <div id="stage"><svg id="svg" viewBox="0 0 1660 748" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div id="stage">
+    <svg id="svg" viewBox="0 0 1660 748" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="zoomui" role="group" aria-label="Zoom and pan the diagram">
+      <button type="button" id="zOut" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button type="button" id="zIn" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" id="zFit" title="Reset view" aria-label="Reset view">&#8635;</button>
+    </div>
+  </div>
   <aside id="panel" aria-live="polite" aria-label="Stage details">
     <div class="pin">
       <button id="pClose" type="button" title="Close (Esc)" aria-label="Close">&times;</button>
@@ -686,6 +708,102 @@ document.querySelectorAll(".tab").forEach(t=>{
   });
 });
 $("railToggle").addEventListener("click",()=>document.body.classList.toggle("railoff"));
+
+/* ---------- zoom & pan ----------
+   The diagram sits in a fixed stage; below we transform the SVG (origin 0 0)
+   rather than reflowing it. Scroll to zoom at the cursor, drag to pan, pinch
+   with two fingers, and + / - / 0 (or the corner controls) to zoom and reset. */
+(()=>{
+  const stage=document.getElementById("stage");
+  const MIN=1, MAX=5, STEP=1.3;
+  let s=1, tx=0, ty=0;
+  const clamp=v=>Math.min(MAX,Math.max(MIN,v));
+  const apply=()=>{ svg.style.transform=`translate(${tx}px,${ty}px) scale(${s})`; };
+  const box=()=>stage.getBoundingClientRect();
+
+  /* keep the point under the cursor fixed while the scale changes */
+  function zoomAt(px,py,f){
+    const ns=clamp(s*f);
+    if(Math.abs(ns-s)<1e-4) return;
+    const k=ns/s;
+    tx=px-k*(px-tx); ty=py-k*(py-ty); s=ns; apply();
+  }
+  function zoomCenter(f){ const r=box(); zoomAt(r.width/2,r.height/2,f); }
+  function reset(){ s=1; tx=0; ty=0; apply(); }
+
+  stage.addEventListener("wheel",ev=>{
+    ev.preventDefault();
+    const r=box();
+    zoomAt(ev.clientX-r.left, ev.clientY-r.top, Math.exp(-ev.deltaY*0.0018));
+  },{passive:false});
+
+  const ptrs=new Map();
+  let last=null, down=null, pinch=0, dragged=false, guard=false;
+  stage.addEventListener("pointerdown",ev=>{
+    if(ev.target.closest("#zoomui")) return;
+    ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(ptrs.size===1){
+      last={x:ev.clientX,y:ev.clientY};
+      down={x:ev.clientX,y:ev.clientY};
+      dragged=false; stage.classList.add("dragging");
+    } else if(ptrs.size===2){ last=null; down=null; pinch=0; }
+    try{ stage.setPointerCapture(ev.pointerId); }catch(e){}
+  });
+  stage.addEventListener("pointermove",ev=>{
+    if(!ptrs.has(ev.pointerId)) return;
+    ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(ptrs.size===1&&last&&s>MIN){
+      tx+=ev.clientX-last.x; ty+=ev.clientY-last.y;
+      last={x:ev.clientX,y:ev.clientY};
+      if(down&&Math.hypot(ev.clientX-down.x,ev.clientY-down.y)>4) dragged=true;
+      apply();
+    } else if(ptrs.size===2){
+      const p=[...ptrs.values()];
+      const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+      const r=box();
+      zoomAt((p[0].x+p[1].x)/2-r.left,(p[0].y+p[1].y)/2-r.top, pinch?d/pinch:1);
+      pinch=d; dragged=true;
+    }
+  });
+  const end=ev=>{
+    if(!ptrs.delete(ev.pointerId)) return;
+    if(ptrs.size===1){
+      const p=[...ptrs.values()][0];
+      last={x:p.x,y:p.y}; down={x:p.x,y:p.y}; dragged=false;
+    } else if(ptrs.size===0){
+      last=null; down=null; pinch=0; stage.classList.remove("dragging");
+      if(dragged){ guard=true; setTimeout(()=>{guard=false;},0); }
+    }
+  };
+  stage.addEventListener("pointerup",end);
+  stage.addEventListener("pointercancel",end);
+  /* a pan must not register as a click on a node or chip */
+  stage.addEventListener("click",ev=>{
+    if(guard){ ev.stopPropagation(); ev.preventDefault(); guard=false; }
+  },true);
+
+  document.getElementById("zIn").onclick=()=>zoomCenter(STEP);
+  document.getElementById("zOut").onclick=()=>zoomCenter(1/STEP);
+  document.getElementById("zFit").onclick=reset;
+  document.addEventListener("keydown",ev=>{
+    const tag=(ev.target&&ev.target.tagName)||"";
+    if(tag==="INPUT"||tag==="TEXTAREA") return;
+    if(ev.key==="+"||ev.key==="="){ ev.preventDefault(); zoomCenter(STEP); }
+    else if(ev.key==="-"||ev.key==="_"){ ev.preventDefault(); zoomCenter(1/STEP); }
+    else if(ev.key==="0"){ ev.preventDefault(); reset(); }
+    else if(s>MIN&&ev.key.indexOf("Arrow")===0){
+      ev.preventDefault();
+      const d=64;
+      if(ev.key==="ArrowLeft") tx+=d;
+      if(ev.key==="ArrowRight") tx-=d;
+      if(ev.key==="ArrowUp") ty+=d;
+      if(ev.key==="ArrowDown") ty-=d;
+      apply();
+    }
+  });
+
+  reset();
+})();
 </script>
 </body>
 </html>
