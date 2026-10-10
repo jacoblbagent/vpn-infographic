@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How a VPN Works — web infographic</title>
+<style>
+  :root{
+    --bg:#FBFBFA;--ink:#0F172A;--muted:#5B6B7C;--faint:#93A2B3;
+    --line:#DFE5EC;--node:#FFFFFF;--chip:#F7F9FB;--chipb:#E6EBF1;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* stage (diagram) + panel side by side; the panel is a real column, so the
+     diagram reflows instead of being covered. */
+  #app{display:flex;height:100vh;overflow:hidden}
+  #stage{flex:1;min-width:0;overflow:auto;display:flex;align-items:center;justify-content:center}
+  svg{display:block;width:100%;min-width:900px;height:auto}
+
+  .col-title{font-size:10px;font-weight:700;letter-spacing:1.5px;fill:var(--faint)}
+  .node-box{fill:var(--node);stroke:var(--line);stroke-width:1}
+  .node-label{font-size:12.5px;font-weight:600;fill:var(--ink)}
+
+  .chip-box{fill:var(--chip);stroke:var(--chipb);stroke-width:1;transition:fill .16s,stroke .16s}
+  .chip-text{font-family:var(--mono);font-size:10.5px;font-weight:600;fill:#42526A;
+    letter-spacing:.2px;pointer-events:none}
+  .chip{cursor:pointer}
+  .chip:hover .chip-box{fill:#EDF2F7;stroke:#B9C6D4}
+  .chip:hover .chip-text{fill:var(--ink)}
+  .chip.sel .chip-box{fill:var(--t);stroke:var(--c);stroke-width:1.4}
+  .chip.sel .chip-text{fill:var(--c)}
+  .chip:focus{outline:none}
+  .chip:focus-visible .chip-box{stroke:var(--ink);stroke-width:1.4}
+
+  .g-node{transition:opacity .18s,stroke .18s;cursor:pointer}
+  .g-node.dim{opacity:.2}
+  .g-node.pin .node-box{stroke:#AEBBC8;stroke-width:1.4}
+
+  .edge{fill:none;stroke:#A9B6C4;stroke-width:1;transition:opacity .18s,stroke .18s,stroke-width .18s}
+  .edge.dim{opacity:.07}
+  .edge.hl{opacity:1;stroke-width:1.7;stroke:#334155}
+  .edge-lbl{font-size:9px;font-weight:600;fill:#7B8A9B;letter-spacing:.1px;opacity:0;
+    transition:opacity .18s;paint-order:stroke;stroke:var(--bg);stroke-width:3;stroke-linejoin:round}
+  .edge-lbl.on{opacity:1}
+  .edge-lbl.static{opacity:1}
+  .edge-lbl.fade{opacity:.13}
+
+  .obs{stroke:#B7C1CD;stroke-dasharray:3 4}
+  .ret{stroke:#DDBBA4;stroke-dasharray:4 5}
+  .ret-lbl{font-size:9px;font-weight:700;fill:#B57A4E;letter-spacing:.6px}
+
+  .band-box{fill:#FCFDFE;stroke:#E6EBF1;stroke-width:1;stroke-dasharray:3 4}
+  .band-lbl{font-size:10.5px;font-weight:700;fill:#5B6B7C;letter-spacing:.6px}
+  .foot{font-size:9.5px;fill:#A3AFBC}
+  .legend-t{font-size:10px;font-weight:600;fill:var(--muted);letter-spacing:.2px}
+
+  /* ---- detail panel ---- */
+  #panel{flex:0 0 auto;width:0;overflow:hidden;background:#fff;
+    border-left:1px solid transparent;transition:width .22s ease,border-color .22s}
+  #panel.open{width:400px;border-left-color:var(--line)}
+  .pin{width:400px;height:100%;overflow-y:auto;padding:26px 26px 40px;position:relative}
+  #pClose{position:absolute;top:20px;right:20px;width:26px;height:26px;padding:0;
+    border:0;border-radius:6px;background:transparent;color:#A3AFBC;font-size:18px;
+    line-height:1;cursor:pointer}
+  #pClose:hover{background:#F1F5F9;color:var(--ink)}
+  .tkr{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:1.4px;
+    color:#B6C1CC;text-transform:uppercase}
+  .cname{font-size:20px;font-weight:700;margin:6px 0 5px;letter-spacing:-.2px;
+    display:flex;align-items:center;gap:9px}
+  .cname .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .sect{margin-top:19px;padding-top:15px;border-top:1px solid var(--line)}
+  .sect:first-of-type{margin-top:0;padding-top:0;border-top:0}
+  .sect[hidden]{display:none}
+  .sl{font-size:9.5px;font-weight:700;letter-spacing:1.3px;color:#A3AFBC;
+    text-transform:uppercase;margin:0 0 10px}
+  .disc>summary{cursor:pointer;list-style:none;display:flex;align-items:center;
+    margin:0;user-select:none}
+  .disc>summary::-webkit-details-marker{display:none}
+  .disc>summary:hover{color:#6B7A8C}
+  .disc>summary::after{content:"+";margin-left:auto;font-size:13px;font-weight:700;
+    letter-spacing:0;color:#B6C1CC}
+  .disc[open]>summary::after{content:"\2013"}
+  .disc>div{margin-top:10px}
+  .about{font-size:12.5px;line-height:1.55;color:#42526A;margin:0}
+  .frow{display:flex;gap:7px;align-items:baseline;font-size:12.5px;color:#42526A;
+    margin-bottom:8px;line-height:1.4}
+  .frow .ar{color:#A9B6C4;flex:0 0 auto;font-family:var(--mono);font-size:11px}
+  .frow .lb{color:#8A99AA;font-size:11px}
+  .muted{font-size:12px;color:#A3AFBC;font-style:italic}
+  .lnks{display:flex;flex-wrap:wrap;gap:6px 14px}
+  .lnk{font-size:12px;color:#42526A;text-decoration:none;border-bottom:1px solid #D8E0E8;
+    padding-bottom:1px}
+  .lnk:hover{color:#0F172A;border-bottom-color:#0F172A}
+  .asof{font-size:9.5px;color:#B6C1CC;margin-top:20px;line-height:1.5}
+
+  /* ---- rail: walkthrough + glossary ---- */
+  #rail{flex:0 0 auto;width:320px;background:#fff;border-left:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:0;overflow:hidden;
+    transition:width .22s ease,border-color .22s}
+  body.railoff #rail{width:44px}
+  body.railoff .tabs,body.railoff .railbody{display:none}
+  body.railoff .railhead{width:44px;justify-content:center;padding:13px 0 11px;
+    border-bottom-color:transparent}
+  body.railoff #railToggle{color:#7B8A9B}
+  .railhead{display:flex;align-items:center;gap:8px;flex:0 0 auto;
+    padding:13px 12px 11px;border-bottom:1px solid var(--line)}
+  .tabs{display:flex;gap:2px;flex:1;background:#F1F4F8;border-radius:7px;padding:2px}
+  .tab{flex:1;border:0;background:transparent;font:inherit;font-size:11.5px;font-weight:600;
+    color:#5B6B7C;padding:5px 8px;border-radius:5px;cursor:pointer;letter-spacing:.1px}
+  .tab.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.09)}
+  #railToggle{flex:0 0 auto;width:24px;height:24px;padding:0;border:0;border-radius:6px;
+    background:transparent;color:#A3AFBC;font-size:16px;line-height:1;cursor:pointer}
+  #railToggle:hover{background:#F1F5F9;color:var(--ink)}
+  .railbody{flex:1;min-height:0;overflow-y:auto;padding:11px 12px 34px}
+  .railnote{font-size:9.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+    color:#B6C1CC;margin:1px 2px 8px}
+
+  .vrow{display:grid;grid-template-columns:20px 1fr;column-gap:9px;row-gap:3px;
+    align-items:start;width:100%;padding:8px 7px;border:0;border-radius:7px;background:none;
+    font:inherit;text-align:left;cursor:pointer}
+  .vrow:hover{background:#F5F8FB}
+  .vrow.sel,.vrow.sel:hover{background:#E8F0FA}
+  .vrk{font-family:var(--mono);font-size:11px;color:#B6C1CC;text-align:right;padding-top:1px}
+  .vnm{font-size:12.5px;font-weight:600;color:#334155;line-height:1.3}
+  .vsub{grid-column:2 / 3;font-size:11.5px;color:#8A99AA;line-height:1.4}
+
+  .gterm{font-family:var(--mono);font-size:11.5px;font-weight:700;color:#42526A}
+  .gdef{font-size:12px;color:#5B6B7C;line-height:1.45;margin-top:3px}
+  .grow{padding:9px 4px;border-bottom:1px solid #F0F3F7}
+  .grow:last-child{border-bottom:0}
+
+  @media (max-width:1180px){
+    #panel{position:fixed;top:0;right:0;height:100%;z-index:35;
+      box-shadow:-14px 0 30px rgba(15,23,42,.10);transition:transform .22s ease,width 0s}
+    #panel{width:340px;transform:translateX(100%)}
+    #panel.open{width:340px;transform:translateX(0)}
+    .pin{width:340px}
+
+    #rail{position:fixed;top:0;right:0;height:100%;z-index:30;width:330px;
+      box-shadow:-14px 0 30px rgba(15,23,42,.10);transform:translateX(0);
+      transition:transform .22s ease}
+    body.railoff #rail{width:330px;transform:translateX(calc(100% - 44px));
+      box-shadow:-6px 0 16px rgba(15,23,42,.08)}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><svg id="svg" viewBox="0 0 1660 748" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <aside id="panel" aria-live="polite" aria-label="Stage details">
+    <div class="pin">
+      <button id="pClose" type="button" title="Close (Esc)" aria-label="Close">&times;</button>
+      <div class="tkr" id="pStage"></div>
+      <div class="cname" id="pName"></div>
+      <div class="sect">
+        <div class="sl">What happens</div>
+        <p class="about" id="pAbout"></p>
+      </div>
+
+      <div class="sect" id="secSteps">
+        <div class="sl">Step by step</div>
+        <div id="pSteps"></div>
+      </div>
+
+      <div class="sect" id="secObs">
+        <div class="sl">What an observer sees</div>
+        <div id="pObs"></div>
+      </div>
+
+      <div class="sect" id="secLinks">
+        <div class="sl">Learn more</div>
+        <div id="pLinks"></div>
+      </div>
+
+      <div class="asof" id="pAsof"></div>
+    </div>
+  </aside>
+
+  <aside id="rail" aria-label="Walkthrough">
+    <div class="railhead">
+      <div class="tabs" role="tablist">
+        <button class="tab on" type="button" role="tab" aria-selected="true"
+          data-tab="steps">Steps</button>
+        <button class="tab" type="button" role="tab" aria-selected="false"
+          data-tab="terms">Glossary</button>
+      </div>
+      <button id="railToggle" type="button" title="Hide this panel">&rsaquo;</button>
+    </div>
+    <div class="railbody">
+      <div id="stepsPane" role="tabpanel">
+        <div class="railnote">What happens, in order</div>
+        <div id="stepList"></div>
+      </div>
+      <div id="termsPane" role="tabpanel" hidden>
+        <div class="railnote">Terms used here</div>
+        <div id="termList"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+/* ============================ the diagram ============================
+   A left-to-right flow: your device → encryption → the tunnel → the VPN
+   server → the open internet → the website. Every label is short on purpose;
+   the detail lives in the panel and the walkthrough rail. Generated SVG.
+===================================================================== */
+
+/* ---------- helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent){
+  const n=document.createElementNS(NS,tag);
+  for(const k in (attrs||{})) n.setAttribute(k,attrs[k]);
+  if(parent) parent.appendChild(n);
+  return n;
+}
+
+/* ---------- palette ---------- */
+const G={dev:"#334155",enc:"#7C3AED",tun:"#0E9F6E",vpn:"#2563EB",net:"#C2410C"};
+const TINT={dev:"#EDF0F3",enc:"#F1ECFD",tun:"#EAF7F1",vpn:"#ECF1FD",net:"#FAF0E9"};
+
+const COL_TITLES=["YOUR DEVICE","ENCRYPTION","ENCRYPTED TUNNEL","VPN SERVER","THE OPEN INTERNET"];
+const CX=[230,530,830,1130,1450];
+const NW=[230,230,240,230,250];
+
+const NODES=[
+  {id:"dev", c:0,label:"Your Device",      g:"dev",chips:["browser","apps","os stack"]},
+  {id:"enc", c:1,label:"Encrypt",          g:"enc",chips:["aes-256","handshake","session key"]},
+  {id:"tun", c:2,label:"Encrypted Tunnel", g:"tun",chips:["encapsulation","ciphertext"]},
+  {id:"srv", c:3,label:"VPN Server",       g:"vpn",chips:["exit node","new IP"]},
+  {id:"net", c:4,label:"Open Internet",    g:"net",chips:["routers","dns"]},
+  {id:"site",c:4,label:"Website",          g:"net",chips:["sees VPN IP"]}
+];
+
+/* l = always-on label; the rest appear while a stage is traced */
+const EDGES=[
+  {a:"dev", b:"enc", l:"data"},
+  {a:"enc", b:"tun", l:"ciphertext"},
+  {a:"tun", b:"srv", l:"packets"},
+  {a:"srv", b:"net", l:"your traffic"},
+  {a:"net", b:"site",l:"request"}
+];
+
+/* observers: dashed, and they feed every stage */
+const OBS=[
+  {id:"o-isp",label:"Your ISP",        chips:["sees ciphertext"]},
+  {id:"o-ap", label:"Public Wi-Fi",    chips:["sees ciphertext"]},
+  {id:"o-trk",label:"Trackers & Ads",  chips:["see a shared IP"]}
+];
+
+/* ---------- per-stage detail for the panel ---------- */
+const INFO={
+  dev:{stage:"01 · YOUR DEVICE",name:"Your Device",g:"dev",
+    about:"Everything you do leaves the machine as packets: a request from the browser or an app, handed to the operating system's network stack. Left alone, those packets are readable by anything on the path.",
+    rows:[["→","Sends a request","plain, unencrypted"],
+          ["→","Your real IP","is the return address"],
+          ["→","Added by the client","the VPN agent on the device"]],
+    obs:"Anyone on the path — ISP, Wi-Fi operator — can read the request and see your address.",
+    links:[["Virtual private network","https://en.wikipedia.org/wiki/Virtual_private_network"]]},
+  enc:{stage:"02 · ENCRYPTION",name:"Encrypt",g:"enc",
+    about:"The VPN client and the server agree on a key, then the client scrambles each packet with a symmetric cipher. Only the two endpoints hold the key, so the payload is unreadable in transit.",
+    rows:[["→","Handshake first","key exchange"],
+          ["→","AES-256 or ChaCha20","per-packet cipher"],
+          ["→","Session key","known only to the endpoints"]],
+    obs:"A scrambled payload. The header still shows a packet went somewhere, but not what it says.",
+    links:[["WireGuard","https://en.wikipedia.org/wiki/WireGuard"],
+           ["IPsec","https://en.wikipedia.org/wiki/IPsec"]]},
+  tun:{stage:"03 · ENCRYPTED TUNNEL",name:"Encrypted Tunnel",g:"tun",
+    about:"Each encrypted packet is wrapped inside an outer packet addressed to the VPN server. The outer header is what the network can see; the inner packet — your real destination — stays sealed until the server opens it.",
+    rows:[["→","Encapsulation","your packet inside a new one"],
+          ["→","Outer header","addressed to the VPN server"],
+          ["→","No plaintext","your true destination is hidden"]],
+    obs:"A stream of ciphertext heading to one address — the VPN server. Nothing else.",
+    links:[["Tunneling protocol","https://en.wikipedia.org/wiki/Tunneling_protocol"],
+           ["Encapsulation","https://en.wikipedia.org/wiki/Encapsulation_(networking)"]]},
+  srv:{stage:"04 · VPN SERVER",name:"VPN Server",g:"vpn",
+    about:"The server unwraps each packet, decrypts it and re-sends it onward from its own address. To the internet, the traffic now comes from the server, not from you. A no-logs server keeps no record tying the two together.",
+    rows:[["→","Unwraps & decrypts","reverses encapsulation"],
+          ["→","Re-addressed","the server's IP becomes yours"],
+          ["→","No logs","if the provider keeps none"]],
+    obs:"They see traffic arriving at the server, and traffic leaving it — but not the link back to you.",
+    links:[["VPN service","https://en.wikipedia.org/wiki/Virtual_private_network"]]},
+  net:{stage:"05 · THE OPEN INTERNET",name:"Open Internet",g:"net",
+    about:"From here it is ordinary internet traffic: routers forward it hop by hop toward the destination. The difference is only the source address it carries — the VPN server's, not yours.",
+    rows:[["→","Routers & DNS","forward it as usual"],
+          ["→","Source address","is the VPN server's"],
+          ["→","Path","no longer starts at your door"]],
+    obs:"Routers on the path see normal traffic from the VPN server — they never see your device.",
+    links:[["Internet routing","https://en.wikipedia.org/wiki/Routing"]]},
+  site:{stage:"05 · THE OPEN INTERNET",name:"Website",g:"net",
+    about:"The site answers the request as it would any other. It logs the VPN server's address as the visitor — so the record points at the server, and geo-blocks and rate limits key off that instead of you.",
+    rows:[["←","Sees the VPN IP","not your real address"],
+          ["←","Answers normally","the response returns the same way"],
+          ["←","Logs the visit","against the server's address"]],
+    obs:"The site logs the VPN server's address. Your real address never arrives.",
+    links:[["IP address","https://en.wikipedia.org/wiki/IP_address"]]},
+  "o-isp":{stage:"OBSERVER",name:"Your ISP",g:"dev",
+    about:"Your internet provider carries the encrypted packets but cannot read them. What it can still see is that you are connected to a VPN server, and the volume and timing of the traffic.",
+    rows:[["•","Sees","ciphertext, size, timing"],
+          ["•","Cannot see","the pages, the content"],
+          ["•","Knows","that you use a VPN"]],
+    obs:"Encrypted payloads bound for a single VPN endpoint.",
+    links:[["Traffic analysis","https://en.wikipedia.org/wiki/Traffic_analysis"]]},
+  "o-ap":{stage:"OBSERVER",name:"Public Wi-Fi",g:"dev",
+    about:"The operator of a coffee-shop or hotel network is in the same position as an ISP: the packets still pass through their equipment, but they are encrypted before they leave your device.",
+    rows:[["•","Sees","ciphertext on the local network"],
+          ["•","Cannot see","anything you send or receive"],
+          ["•","Blocked from","reading your traffic"]],
+    obs:"Ciphertext from one device to one endpoint.",
+    links:[["Public Wi-Fi","https://en.wikipedia.org/wiki/Hotspot_(Wi-Fi)"]]},
+  "o-trk":{stage:"OBSERVER",name:"Trackers & Ads",g:"dev",
+    about:"Advertising and analytics scripts no longer see your address, but they can still fingerprint your browser and follow you across sites. A VPN hides where you connect from, not who you are.",
+    rows:[["•","Lose","your real IP geolocation"],
+          ["•","Still have","cookies and fingerprints"],
+          ["•","May share","one IP with many users"]],
+    obs:"A shared VPN address instead of a home IP — one that many people may use at once.",
+    links:[["Device fingerprint","https://en.wikipedia.org/wiki/Device_fingerprint"]]}
+};
+
+/* ---------- measurement ---------- */
+const mctx=document.createElement("canvas").getContext("2d");
+mctx.font='600 10.5px ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace';
+const chipW=t=>Math.ceil(mctx.measureText(t).width)+16;
+
+/* ---------- layout ---------- */
+const TOP=196, CH=20, CGAP=6, RGAP=30;
+NODES.forEach(n=>{
+  n.x=CX[n.c]; n.w=NW[n.c];
+  const inner=n.w-28; let rows=[],cur=[],rw=0;
+  n.chips.forEach(t=>{const w=chipW(t);
+    if(cur.length&&rw+CGAP+w>inner){rows.push({items:cur,w:rw});cur=[];rw=0;}
+    if(cur.length)rw+=CGAP; cur.push({t,w}); rw+=w;});
+  if(cur.length)rows.push({items:cur,w:rw});
+  n.rows=rows;
+  const chipsH=rows.length?rows.length*CH+(rows.length-1)*CGAP:0;
+  let h=14+18+(chipsH?8+chipsH:0)+14;
+  n.h=Math.max(h,76);
+});
+const byId={}; NODES.forEach(n=>byId[n.id]=n);
+/* stage columns are top-aligned, so every column title sits on the same line */
+[0,1,2,3,4].forEach(c=>{
+  const col=NODES.filter(n=>n.c===c);
+  let y=TOP;
+  col.forEach(n=>{n.y=y;y+=n.h+RGAP;});
+});
+
+const outs={},ins={};
+EDGES.forEach((e,i)=>{ (outs[e.a]=outs[e.a]||[]).push(i); (ins[e.b]=ins[e.b]||[]).push(i); });
+const spread=(node,i,arr)=>node.y+16+(arr.indexOf(i)+1)*(node.h-32)/(arr.length+1);
+EDGES.forEach((e,i)=>{
+  const A=byId[e.a],B=byId[e.b];
+  e.same=(A.c===B.c);
+  e.x1=A.x+A.w/2; e.y1=spread(A,i,outs[e.a]);
+  e.x2=e.same?B.x+B.w/2:B.x-B.w/2; e.y2=spread(B,i,ins[e.b]);
+});
+
+/* ---------- render ---------- */
+const svg=document.getElementById("svg");
+const defs=el("defs",{},svg);
+function marker(id,color){
+  const m=el("marker",{id:id,viewBox:"0 0 8 8",refX:"6.6",refY:"4",markerWidth:"8",
+    markerHeight:"8",orient:"auto",markerUnits:"strokeWidth"},defs);
+  el("path",{d:"M0.5,1 L7,4 L0.5,7 z",fill:color},m);
+}
+marker("m-flow","#A9B6C4"); marker("m-obs","#B7C1CD"); marker("m-ret","#DDBBA4");
+
+const gEdge=el("g",{},svg);
+const gBand=el("g",{},svg);
+const gNode=el("g",{},svg);
+
+EDGES.forEach(e=>{
+  const c=Math.max(28,(e.x2-e.x1)*0.52);
+  const d=`M${e.x1},${e.y1} C${e.x1+c},${e.y1} ${e.x2-c},${e.y2} ${e.x2},${e.y2}`;
+  const p=el("path",{d:d,class:"edge","marker-end":"url(#m-flow)",
+    "data-a":e.a,"data-b":e.b},gEdge);
+  e.el=p;
+  const t=el("text",{x:e.x1+7,y:e.y1-5,
+    class:"edge-lbl"+(e.l?" static":"")},gEdge);
+  t.textContent=e.l||"";
+  e.lbl=t;
+});
+
+/* ---------- observers: a dashed guide into every stage ---------- */
+const GUIDE_Y=470, bandTop=512, bandX0=290, bandX1=1290, bandCx=(bandX0+bandX1)/2;
+el("path",{d:`M${CX[0]},${GUIDE_Y} L${CX[3]},${GUIDE_Y}`,class:"edge obs",
+  "marker-end":"url(#m-obs)"},gBand);
+[0,1,2,3].forEach(c=>{
+  const n=NODES.filter(m=>m.c===c).slice(-1)[0];
+  el("path",{d:`M${CX[c]},${GUIDE_Y} L${CX[c]},${n.y+n.h+3}`,class:"edge obs",
+    "marker-end":"url(#m-obs)"},gBand);
+});
+el("path",{d:`M${bandCx},${bandTop} L${bandCx},${GUIDE_Y+3}`,class:"edge obs",
+  "marker-end":"url(#m-obs)"},gBand);
+const gl=el("text",{x:CX[0]+10,y:GUIDE_Y-9,class:"edge-lbl static"},gBand);
+gl.textContent="sees ciphertext only";
+
+const cap=el("text",{x:bandX0,y:bandTop-14,class:"col-title"},gBand);
+cap.textContent="OBSERVERS";
+const BW=322, BGAP=16, BH=74;
+OBS.forEach((g,i)=>{
+  const x=bandX0+i*(BW+BGAP);
+  el("rect",{x:x,y:bandTop,width:BW,height:BH,rx:10,class:"band-box"},gBand);
+  const lt=el("text",{x:x+14,y:bandTop+22,class:"band-lbl"},gBand); lt.textContent=g.label;
+  let cx=x+14, cy=bandTop+34;
+  g.chips.forEach(t=>{
+    const w=chipW(t);
+    const cg=el("g",{class:"chip",tabindex:"0",role:"button"},gBand);
+    cg.setAttribute("aria-label",t+" — "+g.label);
+    el("rect",{x:cx,y:cy,width:w,height:CH,rx:5,class:"chip-box"},cg);
+    const tx=el("text",{x:cx+w/2,y:cy+CH/2+3.7,class:"chip-text","text-anchor":"middle"},cg);
+    tx.textContent=t;
+    cg.style.setProperty("--c",G.dev); cg.style.setProperty("--t",TINT.dev);
+    bindChip(cg,t,g.id);
+    cx+=w+CGAP;
+  });
+});
+
+/* ---------- the return path ---------- */
+function roundPath(pts,r){
+  let d=`M${pts[0][0]},${pts[0][1]}`;
+  for(let i=1;i<pts.length-1;i++){
+    const p0=pts[i-1],p1=pts[i],p2=pts[i+1];
+    const v1=[p1[0]-p0[0],p1[1]-p0[1]],v2=[p2[0]-p1[0],p2[1]-p1[1]];
+    const l1=Math.hypot(v1[0],v1[1]),l2=Math.hypot(v2[0],v2[1]);
+    const rr=Math.min(r,l1/2,l2/2);
+    const a=[p1[0]-v1[0]/l1*rr,p1[1]-v1[1]/l1*rr];
+    const b=[p1[0]+v2[0]/l2*rr,p1[1]+v2[1]/l2*rr];
+    d+=` L${a[0]},${a[1]} Q${p1[0]},${p1[1]} ${b[0]},${b[1]}`;
+  }
+  const L=pts[pts.length-1]; return d+` L${L[0]},${L[1]}`;
+}
+const siteN=byId["site"], devN=byId["dev"], LOOP_Y=662;
+const loop=[[CX[4],siteN.y+siteN.h+2],[CX[4],LOOP_Y],[60,LOOP_Y],
+            [60,devN.y+devN.h/2],[CX[0]-devN.w/2-2,devN.y+devN.h/2]];
+el("path",{d:roundPath(loop,18),class:"edge ret","marker-end":"url(#m-ret)"},gEdge);
+const retLbl=el("text",{x:60,y:LOOP_Y-12,class:"ret-lbl"},gEdge);
+retLbl.textContent="THE RESPONSE COMES BACK, STILL ENCRYPTED";
+
+/* ---------- nodes ---------- */
+NODES.forEach(n=>{
+  const g=el("g",{class:"g-node","data-id":n.id},gNode); n.gEl=g;
+  el("rect",{x:n.x-n.w/2,y:n.y,width:n.w,height:n.h,rx:12,class:"node-box"},g);
+  const cy=n.y+26;
+  el("circle",{cx:n.x-n.w/2+18,cy:cy-4,r:3.6,fill:G[n.g]},g);
+  const lt=el("text",{x:n.x-n.w/2+30,y:cy,class:"node-label"},g);
+  lt.textContent=n.label;
+  let yy=n.y+42;
+  if(n.rows.length){
+    yy+=8;
+    n.rows.forEach(row=>{
+      let cx=n.x-row.w/2;
+      row.items.forEach(it=>{
+        const cg=el("g",{class:"chip",tabindex:"0",role:"button"},g);
+        cg.setAttribute("aria-label",it.t+" — "+n.label);
+        el("rect",{x:cx,y:yy,width:it.w,height:CH,rx:5,class:"chip-box"},cg);
+        const tx=el("text",{x:cx+it.w/2,y:yy+CH/2+3.7,class:"chip-text",
+          "text-anchor":"middle"},cg);
+        tx.textContent=it.t;
+        cg.style.setProperty("--c",G[n.g]); cg.style.setProperty("--t",TINT[n.g]);
+        bindChip(cg,it.t,n.id);
+        cx+=it.w+CGAP;
+      });
+      yy+=CH+CGAP;
+    });
+    yy-=CGAP;
+  }
+  g.addEventListener("mouseenter",()=>{ if(!picked) focus(n.id); });
+  g.addEventListener("mouseleave",()=>{ if(!picked) blur(); });
+  g.addEventListener("click",ev=>{ ev.stopPropagation(); openPanel(n.id); });
+});
+
+/* ---------- trace on hover ---------- */
+function focus(id){
+  const near={}; near[id]=1;
+  EDGES.forEach(e=>{ if(e.a===id)near[e.b]=1; if(e.b===id)near[e.a]=1; });
+  EDGES.forEach(e=>{
+    const on=(e.a===id||e.b===id);
+    e.el.classList.toggle("hl",on); e.el.classList.toggle("dim",!on);
+    e.lbl.classList.toggle("on",on); e.lbl.classList.toggle("fade",!on);
+  });
+  NODES.forEach(n=>n.gEl.classList.toggle("dim",!near[n.id]));
+}
+function blur(){
+  EDGES.forEach(e=>{e.el.classList.remove("hl","dim");
+    e.lbl.classList.remove("on","fade");});
+  NODES.forEach(n=>n.gEl.classList.remove("dim"));
+}
+
+/* ---------- hover tooltip ---------- */
+const tip=document.createElement("div");
+tip.id="tip";
+tip.style.cssText="position:fixed;pointer-events:none;background:#0F172A;color:#fff;font-size:11.5px;"+
+  "font-weight:500;line-height:1.25;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .12s;"+
+  "white-space:nowrap;z-index:40;transform:translate(12px,12px)";
+document.body.appendChild(tip);
+
+/* ---------- chips: hover tip + click → panel ---------- */
+let picked=null;
+function bindChip(nodeEl,term,nodeId){
+  nodeEl.addEventListener("mouseenter",()=>{
+    tip.innerHTML=`<span style="font-family:var(--mono);font-weight:700;color:#BFD3EA">${term}</span>`;
+    tip.style.opacity="1";
+  });
+  nodeEl.addEventListener("mousemove",ev=>{tip.style.left=ev.clientX+"px";tip.style.top=ev.clientY+"px";});
+  nodeEl.addEventListener("mouseleave",()=>{tip.style.opacity="0";});
+  nodeEl.addEventListener("click",ev=>{ev.stopPropagation();openPanel(nodeId,nodeEl);});
+  nodeEl.addEventListener("keydown",ev=>{
+    if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();openPanel(nodeId,nodeEl);}
+  });
+}
+
+/* ---------- detail panel ---------- */
+const panel=document.getElementById("panel");
+const $=id=>document.getElementById(id);
+$("pClose").onclick=()=>clearSel();
+document.addEventListener("keydown",ev=>{ if(ev.key==="Escape") clearSel(); });
+svg.addEventListener("click",()=>clearSel());
+
+function nodeColor(id){
+  const n=byId[id];
+  if(n) return G[n.g];
+  const o=OBS.find(o=>o.id===id);
+  return o?G.dev:G.dev;
+}
+function openPanel(id,chipEl){
+  const I=INFO[id]; if(!I) return;
+  picked={nodeId:id};
+  markPin(byId[id]?id:null);
+  markRailSel(id);
+
+  $("pStage").textContent=I.stage;
+  $("pName").innerHTML=`<span class="dot" style="background:${G[I.g]}"></span>${I.name}`;
+  $("pAbout").textContent=I.about;
+
+  const st=$("pSteps"); st.innerHTML="";
+  (I.rows||[]).forEach(r=>st.appendChild(row(r[0],r[1],r[2])));
+  $("secSteps").hidden=!(I.rows||[]).length;
+
+  $("pObs").innerHTML="";
+  $("pObs").appendChild(muted(I.obs));
+  $("secObs").hidden=!I.obs;
+
+  const lk=$("pLinks"); lk.innerHTML="";
+  const rowEl=document.createElement("div"); rowEl.className="lnks";
+  (I.links||[]).forEach(l=>rowEl.appendChild(linkOut(l[0],l[1])));
+  if(rowEl.childNodes.length){ lk.appendChild(rowEl); $("secLinks").hidden=false; }
+  else $("secLinks").hidden=true;
+
+  $("pAsof").textContent="Illustrative diagram. Labels are simplified; encryption strength depends on the protocol in use.";
+
+  document.querySelectorAll(".chip.sel").forEach(c=>c.classList.remove("sel"));
+  if(chipEl) chipEl.classList.add("sel");
+  if(byId[id]) focus(id); else blur();
+  panel.classList.add("open");
+}
+function row(ar,label,note){
+  const d=document.createElement("div"); d.className="frow";
+  const a=document.createElement("span"); a.className="ar"; a.textContent=ar;
+  const s=document.createElement("span");
+  s.textContent=label+(note?" ":"");
+  if(note){const n=document.createElement("span");n.className="lb";n.textContent=" · "+note;s.appendChild(n);}
+  d.append(a,s);return d;
+}
+function muted(t){const d=document.createElement("div");d.className="muted";d.textContent=t;return d;}
+function linkOut(label,href){
+  const a=document.createElement("a"); a.className="lnk"; a.textContent=label+" ↗";
+  a.href=href; a.target="_blank"; a.rel="noopener"; return a;
+}
+function pinNode(id){
+  const same=(picked&&picked.nodeId===id);
+  picked={nodeId:id};
+  if(!same){
+    document.querySelectorAll(".chip.sel").forEach(c=>c.classList.remove("sel"));
+    panel.classList.remove("open");
+  }
+  markPin(id);
+  markRailSel(id);
+  focus(id);
+}
+function markPin(id){
+  document.querySelectorAll(".g-node").forEach(g=>
+    g.classList.toggle("pin",!!id&&g.dataset.id===id));
+}
+function markRailSel(id){
+  document.querySelectorAll("#rail .vrow").forEach(el=>
+    el.classList.toggle("sel",!!id&&el.dataset.id===id));
+}
+function clearSel(){
+  picked=null;
+  panel.classList.remove("open");
+  document.querySelectorAll(".chip.sel").forEach(c=>c.classList.remove("sel"));
+  markPin(null);
+  markRailSel(null);
+  blur();
+}
+
+/* ---------- column headers ---------- */
+[0,1,2,3,4].forEach(c=>{
+  const first=NODES.filter(n=>n.c===c)[0];
+  const x=CX[c]-NW[c]/2, y=first.y-16;
+  const num=el("text",{x:x,y:y,class:"col-title",style:"fill:#C3CCD6"},svg);
+  num.textContent="0"+(c+1);
+  const t=el("text",{x:x+22,y:y,class:"col-title"},svg);
+  t.textContent=COL_TITLES[c];
+});
+
+/* ---------- header / footer / legend ---------- */
+const h1=el("text",{x:60,y:92,
+  style:"font-size:25px;font-weight:700;letter-spacing:-.3px;fill:#0F172A"},svg);
+h1.textContent="How a VPN Works";
+const h2=el("text",{x:60,y:118,
+  style:"font-size:12.5px;font-weight:500;fill:#5B6B7C"},svg);
+h2.textContent="Your traffic is encrypted on the device, wrapped in a tunnel, and re-addressed by the VPN server — so the internet sees the server, not you.";
+
+const legend=[["Device","#334155"],["Encryption","#7C3AED"],["Tunnel","#0E9F6E"],
+  ["VPN server","#2563EB"],["Internet","#C2410C"]];
+let lx=1620;
+legend.slice().reverse().forEach(([t,col])=>{
+  const tw=t.length*6.1;
+  const tx=el("text",{x:lx,y:92,"text-anchor":"end",class:"legend-t"},svg); tx.textContent=t;
+  el("circle",{cx:lx-tw-14,cy:88.5,r:3.6,fill:col},svg);
+  lx-=tw+52;
+});
+const lg1=el("text",{x:1620,y:118,"text-anchor":"end",
+  style:"font-size:10px;font-weight:500;fill:#93A2B3"},svg);
+lg1.textContent="—— data flow     ╌╌ what an observer sees     ╌╌ return path";
+
+const f=el("text",{x:60,y:712,class:"foot"},svg);
+f.textContent="Illustrative. The shapes and labels are simplified; a VPN hides where you connect from, not who you are.";
+
+/* ---------- rail: walkthrough + glossary ---------- */
+const STEPS=[
+  {n:"1",t:"Your device sends a request",s:"a browser or app hands packets to the OS",id:"dev"},
+  {n:"2",t:"The client encrypts it",s:"a key is agreed, each packet is sealed",id:"enc"},
+  {n:"3",t:"It is wrapped in a tunnel",s:"an outer header points at the VPN server",id:"tun"},
+  {n:"4",t:"The server unwraps and re-addresses",s:"the server's IP replaces yours",id:"srv"},
+  {n:"5",t:"It leaves as ordinary traffic",s:"routers forward it to the destination",id:"net"},
+  {n:"6",t:"The site answers the server",s:"the reply returns the same way, still encrypted",id:"site"}
+];
+const TERMS=[
+  ["AES-256","The symmetric cipher most VPNs use to scramble each packet."],
+  ["Handshake","The exchange where the client and server agree on a key."],
+  ["Session key","The secret key for this connection, held only by the two endpoints."],
+  ["Tunnel","The encrypted path that carries your wrapped packets to the server."],
+  ["Encapsulation","Wrapping one packet inside another so the outer address is all the network sees."],
+  ["Exit node","The VPN server whose address your traffic leaves from."],
+  ["Ciphertext","Encrypted data — unreadable without the key."],
+  ["No-logs","A provider policy of keeping no record of your activity."],
+  ["Kill switch","A client feature that blocks all traffic if the VPN drops."]
+];
+const stepList=$("stepList");
+STEPS.forEach(s=>{
+  const b=document.createElement("button");
+  b.type="button"; b.className="vrow"; b.dataset.id=s.id;
+  b.innerHTML=`<span class="vrk">${s.n}</span><span class="vnm">${s.t}</span>`+
+    `<span class="vsub">${s.s}</span>`;
+  b.addEventListener("mouseenter",()=>{ if(!picked) focus(s.id); });
+  b.addEventListener("mouseleave",()=>{ if(!picked) blur(); });
+  b.addEventListener("click",()=>pinNode(s.id));
+  stepList.appendChild(b);
+});
+const termList=$("termList");
+TERMS.forEach(([t,d])=>{
+  const d_=document.createElement("div"); d_.className="grow";
+  const a=document.createElement("div"); a.className="gterm"; a.textContent=t;
+  const b=document.createElement("div"); b.className="gdef"; b.textContent=d;
+  d_.append(a,b); termList.appendChild(d_);
+});
+
+/* tabs */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(x=>{
+      const on=x===t; x.classList.toggle("on",on);
+      x.setAttribute("aria-selected",on?"true":"false");});
+    const which=t.dataset.tab;
+    $("stepsPane").hidden=(which!=="steps");
+    $("termsPane").hidden=(which!=="terms");
+  });
+});
+$("railToggle").addEventListener("click",()=>document.body.classList.toggle("railoff"));
+</script>
+</body>
+</html>
